@@ -9,7 +9,8 @@ def transcribtor(word):
     word = word.replace('сш', 'шш')
     word = word.replace('сж', 'жж')
     word = word.replace('сщ', 'щщ')
-       
+    word = word.replace('ьо', 'ьйо')
+
     if re.findall(r'\b[яёюеЯЁЮЕ]', word):
         word = re.sub(r'\b([яёюеЯЁЮЕ])', lambda m: "й" + {'Я':'А','Ё':'О','Ю':'У','Е':'Э','я':'а','ё':'о','ю':'у','е':'э'}[m.group(1)], word)    
     if re.findall(r'ь[яёюеЯЁЮЕ]', word):
