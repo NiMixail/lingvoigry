@@ -46,7 +46,7 @@ except FileNotFoundError:
 cleaned_words_set = set()
 combo_freq = defaultdict(int)
 try:
-    with open('russian.txt', 'r') as f:
+    with open('russian.txt', 'r', encoding='utf-8') as f:
         for line in f:
             word = line.strip()
             if re.match(r'^[а-яё]+$', word):
@@ -62,15 +62,15 @@ except FileNotFoundError:
     print("[WARNING] russian.txt не найден.")
 
 homo_combos = {
-    'easy': [s for s, count in combo_freq.items() if 500 <= count <= 999],
-    'medium': [s for s, count in combo_freq.items() if 100 <= count <= 499],
+    'easy': [s for s, count in combo_freq.items() if 300 <= count <= 699],
+    'medium': [s for s, count in combo_freq.items() if 100 <= count <= 299],
     'hard': [s for s, count in combo_freq.items() if 10 <= count <= 99]
 }
 
 GAMES = {
     'lingviselica': {'name': 'Лингвиселица 🪓', 'desc': 'Угадай лингвистический термин или фразеологизм по буквам.'},
     'homo': {'name': 'ХОМО 💡',
-             'desc': 'Придумай слово, содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
+             'desc': 'Придумай слово (любой части речи, в любой форме), содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
 }
 
 USER_MEMORY = {}
@@ -399,7 +399,7 @@ def handle_homo_message(message):
         session['last_guesser_name'] = username
 
         send_next_homo_combo(chat_id)
-    else:
+    elif is_all_caps:
         try:
             bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
         except Exception:
