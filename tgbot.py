@@ -1,6 +1,8 @@
 import os
-import random
 import re
+import random
+import threading
+from collections import defaultdict
 import telebot
 from telebot import types
 
@@ -9,7 +11,7 @@ from hangman import hangman
 token = os.environ.get('TOKEN')
 bot = telebot.TeleBot(token)
 
-# Список символов кириллицы для буквенной клавиатуры
+# Список символов кириллицы для буквенной клавиатуры "Лингвиселицы"
 cyr = list('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ-.')
 keyboard = types.ReplyKeyboardMarkup(row_width=5)
 buttons = [types.KeyboardButton(text=letter) for letter in cyr]
@@ -39,25 +41,43 @@ try:
 except FileNotFoundError:
     print("[WARNING] dictionary_f_.txt не найден.")
 
-# Доступные мини-игры в боте
-GAMES = {
-    'rugramle': {'name': 'RuGramle 🎵', 'desc': 'Угадай слово из 5 звуков по спектрограмме.', 'levels_count': 3},
-    'lingviselica': {'name': 'Лингвиселица 🪓', 'desc': 'Угадай лингвистический термин или фразеологизм по буквам.',
-                     'levels_count': 0},
-    'homo': {'name': 'ХОМО 💡', 'desc': 'Придумай слово, содержащее заданное буквосочетание.', 'levels_count': 3},
-    'guess_lang': {'name': 'Угадай язык 🌍', 'desc': 'Определи язык по письменному фрагменту текста.', 'levels_count': 3}
+# Загрузка словаря и генерация сочетаний для ХОМО
+cleaned_words_set = set()
+combo_freq = defaultdict(int)
+try:
+    with open('russian.txt', 'r', encoding='windows-1251') as f:
+        for line in f:
+            word = line.strip()
+            if re.match(r'^[а-яё]+$', word):
+                cleaned_words_set.add(word)
+                subs = set()
+                wlen = len(word)
+                for length in (2, 3):
+                    for i in range(wlen - length + 1):
+                        subs.add(word[i:i + length])
+                for s in subs:
+                    combo_freq[s] += 1
+except FileNotFoundError:
+    print("[WARNING] russian.txt не найден.")
+
+homo_combos = {
+    'easy': [s for s, count in combo_freq.items() if 500 <= count <= 999],
+    'medium': [s for s, count in combo_freq.items() if 100 <= count <= 499],
+    'hard': [s for s, count in combo_freq.items() if 10 <= count <= 99]
 }
 
-# Память активных сессий и состояний
+GAMES = {
+    'lingviselica': {'name': 'Лингвиселица 🪓', 'desc': 'Угадай лингвистический термин или фразеологизм по буквам.'},
+    'homo': {'name': 'ХОМО 💡', 'desc': 'Придумай слово, содержащее заданное буквосочетание (чем больше сложность, тем более редкие попадаются). На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
+}
+
 USER_MEMORY = {}
 chats = {}
 
 
 def init_user(user_id):
     if user_id not in USER_MEMORY:
-        USER_MEMORY[user_id] = {
-            'active_game': None
-        }
+        USER_MEMORY[user_id] = {'active_game': None}
 
 
 def get_main_menu_keyboard():
@@ -72,29 +92,25 @@ def upd(chat_id):
         chat = chats[chat_id]
         text = f"<code>{hangman[chat['mis']]}</code>\n{chat['view']}"
         if text != chat['msg'].text:
-            bot.edit_message_text(chat_id=chat_id,
-                                  message_id=chat['msg'].id,
-                                  text=text,
-                                  parse_mode='HTML')
+            bot.edit_message_text(chat_id=chat_id, message_id=chat['msg'].id, text=text, parse_mode='HTML')
     except Exception as e:
         print(f"[Error in upd]: {e}")
 
 
 def start_hangman_game(chat_id, user_id, mode):
-    # Метод запускает игру Лингвиселица на основе выбранного режима (terms / idioms)
     source_dict = words if mode == 'terms' else frazeos
     if not source_dict:
-        bot.send_message(chat_id, "⚠️ Словарь пуст или не найден. Проверьте файлы словарей.")
+        bot.send_message(chat_id, "⚠️ Словарь пуст или не найден.")
         return
 
     word = random.choice(list(source_dict.keys()))
     info = source_dict[word]
     view = ''.join(i + ' ' if i == ' ' else '_ ' for i in word)
 
-    # Принудительно вызываем клавиатуру букв
     bot.send_message(chat_id, "(Нажимайте на кнопки с буквами или введите догадку целиком)", reply_markup=keyboard)
 
     chats[chat_id] = {
+        'game': 'lingviselica',
         'w': word,
         'view': view,
         'mis': 0,
@@ -103,9 +119,7 @@ def start_hangman_game(chat_id, user_id, mode):
         'msg': None
     }
 
-    msg = bot.send_message(chat_id,
-                           text=f"<code>{hangman[0]}</code>\n{view}",
-                           parse_mode='HTML')
+    msg = bot.send_message(chat_id, text=f"<code>{hangman[0]}</code>\n{view}", parse_mode='HTML')
     chats[chat_id]['msg'] = msg
 
     init_user(user_id)
@@ -113,9 +127,7 @@ def start_hangman_game(chat_id, user_id, mode):
 
 
 def show_game_over_menu(chat_id, user_id, status):
-
     text = "Продолжим?" if status == 'win' else "Попробуем ещё раз?"
-
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🔄 Сыграть снова (Термины)", callback_data="play_lingviselica_terms"),
@@ -125,7 +137,65 @@ def show_game_over_menu(chat_id, user_id, status):
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 
-# Команда СТАРТ
+# Функции игры ХОМО
+def start_homo_game(chat_id, user_id, lvl):
+    init_user(user_id)
+    USER_MEMORY[user_id]['active_game'] = 'homo'
+    chats[chat_id] = {
+        'game': 'homo',
+        'lvl': lvl,
+        'score': 0,
+        'active': True,
+        'timer': None,
+        'combo': None
+    }
+    send_next_homo_combo(chat_id)
+
+
+def send_next_homo_combo(chat_id):
+    session = chats.get(chat_id)
+    if not session or not session['active']:
+        return
+
+    combos = homo_combos.get(session['lvl'], [])
+    if not combos:
+        bot.send_message(chat_id, "⚠️ Нет доступных сочетаний.")
+        return
+
+    combo = random.choice(combos).upper()
+    session['combo'] = combo
+
+    bot.send_message(chat_id, f"⏱ Напишите слово, содержащее: **{combo}**", parse_mode="Markdown")
+
+    if session['timer']:
+        session['timer'].cancel()
+
+    timer = threading.Timer(10.0, homo_timeout, args=[chat_id])
+    session['timer'] = timer
+    timer.start()
+
+
+def homo_timeout(chat_id):
+    session = chats.get(chat_id)
+    if session and session['active'] and session['game'] == 'homo':
+        session['active'] = False
+        score = session['score']
+        session['timer'] = None
+
+        bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**",
+                         parse_mode="Markdown")
+
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🟢 Легкий режим", callback_data="play_homo_easy"),
+            types.InlineKeyboardButton("⚙️ Непростой режим", callback_data="play_homo_medium"),
+            types.InlineKeyboardButton("🔥 Невозможный режим", callback_data="play_homo_hard"),
+            types.InlineKeyboardButton("🔙 Главное меню", callback_data="to_menu")
+        )
+        bot.send_message(chat_id, "Попробуем снова?", reply_markup=markup)
+
+
+# Команды
 @bot.message_handler(commands=['start'])
 def start_command(message):
     if message.chat.type != 'private':
@@ -136,15 +206,14 @@ def start_command(message):
     init_user(user_id)
     USER_MEMORY[user_id]['active_game'] = None
 
-    welcome_text = (
-        "👋 **Привет! Добро пожаловать в лингвистический игровой бот!**\n\n"
-        "Выбирай мини-игру из списка ниже!"
-    )
-    bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    bot.send_message(message.chat.id, "👋 **Добро пожаловать в лингвистический игровой бот!**\n\nВыбирай мини-игру:",
+                     reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+
 
 @bot.message_handler(commands=['jajemdedov'])
 def jajemdedov(message):
     remove_markup = types.ReplyKeyboardRemove()
+    bot.send_message(message.chat.id, "Скрываю клавиатуру букв...", reply_markup=remove_markup)
 
 
 @bot.message_handler(commands=['test'])
@@ -153,7 +222,7 @@ def test(message):
         ch = random.choice(list(frazeos.keys()))
         bot.reply_to(message, text=f"**Пример:** {ch} — {frazeos[ch]}", parse_mode='Markdown')
     else:
-        bot.reply_to(message, text="Словарь фразеологизмов пуст или не загружен.")
+        bot.reply_to(message, text="Словарь пуст.")
 
 
 # Обработка колбэков меню
@@ -166,10 +235,12 @@ def handle_callbacks(call):
 
     data = call.data
 
-    # Возврат в главное меню
     if data == "to_menu":
         USER_MEMORY[user_id]['active_game'] = None
         if chat_id in chats:
+            if chats[chat_id].get('timer'):
+                chats[chat_id]['timer'].cancel()
+            chats[chat_id]['active'] = False
             chats[chat_id]['w'] = None
         bot.clear_step_handler_by_chat_id(chat_id)
         bot.edit_message_text("Выбирай мини-игру из списка:", chat_id, message_id,
@@ -177,7 +248,6 @@ def handle_callbacks(call):
         bot.answer_callback_query(call.id)
         return
 
-    # Открытие меню выбора режимов/уровней игры
     if data.startswith("open_"):
         game_key = data.split("_")[1]
 
@@ -190,66 +260,65 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu"))
             text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}\n\n**Выберите категорию:**"
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-        else:
-            levels_count = GAMES[game_key]['levels_count']
-            markup = types.InlineKeyboardMarkup(row_width=3)
-            buttons = []
-            for i in range(1, levels_count + 1):
-                buttons.append(types.InlineKeyboardButton(f"Ур. {i}", callback_data=f"play_{game_key}_{i}"))
-            markup.add(*buttons)
+        elif game_key == 'homo':
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🟢 Легкий", callback_data="play_homo_easy"),
+                types.InlineKeyboardButton("⚙️ Непростой", callback_data="play_homo_medium"),
+                types.InlineKeyboardButton("🔥 Невозможный", callback_data="play_homo_hard")
+            )
             markup.add(types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu"))
-
-            text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}\n\n**Выберите уровень:**"
+            text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}\n\n**Выберите сложность:**"
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
 
         bot.answer_callback_query(call.id)
         return
 
-    # Запуск конкретного уровня / режима
     if data.startswith("play_"):
         parts = data.split("_")
         game_key = parts[1]
         bot.delete_message(chat_id, message_id)
 
         if game_key == 'lingviselica':
-            mode = parts[2]  # 'terms' или 'idioms'
-            start_hangman_game(chat_id, user_id, mode)
-        else:
-            lvl = int(parts[2])
-            game_text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n📈 **Уровень:** {lvl}\n\nТут процесс игры..."
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(
-                types.InlineKeyboardButton("🟢 Симулировать Победу", callback_data=f"sim_win_{game_key}_{lvl}"),
-                types.InlineKeyboardButton("🔴 Симулировать Поражение", callback_data=f"sim_lose_{game_key}_{lvl}")
-            )
-            markup.add(types.InlineKeyboardButton("🔙 Прервать игру", callback_data=f"open_{game_key}"))
-            bot.send_message(chat_id, game_text, reply_markup=markup, parse_mode="Markdown")
+            start_hangman_game(chat_id, user_id, parts[2])
+        elif game_key == 'homo':
+            start_homo_game(chat_id, user_id, parts[2])
+
         bot.answer_callback_query(call.id)
         return
 
-    # Симуляция исходов сторонних игр
-    if data.startswith("sim_"):
-        _, status, game_key, lvl = data.split("_")
 
-        if status == "win":
-            text = f"🎉 **ПОБЕДА в {GAMES[game_key]['name']} (Уровень {lvl})!**\nЧто делаем дальше?"
-        else:
-            text = f"😢 **ПОРАЖЕНИЕ в {GAMES[game_key]['name']} (Уровень {lvl})**\nПопробуем снова?"
+# Игровой процесс ХОМО
+@bot.message_handler(
+    func=lambda msg: msg.chat.id in chats and chats[msg.chat.id].get('game') == 'homo' and chats[msg.chat.id].get(
+        'active'))
+def handle_homo_message(message):
+    chat_id = message.chat.id
+    session = chats[chat_id]
+    text = message.text.strip()
 
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🔄 Повторить уровень", callback_data=f"play_{game_key}_{lvl}"),
-            types.InlineKeyboardButton("🎛 Выбрать другой уровень", callback_data=f"open_{game_key}"),
-            types.InlineKeyboardButton("🔙 Главное меню", callback_data="to_menu")
-        )
+    is_alphabetic = re.match(r'^[А-ЯЁа-яё]+$', text)
+    is_all_caps = text.isupper() if is_alphabetic else False
+    contains_combo = session['combo'] in text if is_all_caps else False
+    in_dict = text.lower() in cleaned_words_set if contains_combo else False
 
-        bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=markup,
-                              parse_mode="Markdown")
-        bot.answer_callback_query(call.id)
+    if is_all_caps and contains_combo and in_dict:
+        if session['timer']:
+            session['timer'].cancel()
+            session['timer'] = None
+        session['score'] += 1
+        send_next_homo_combo(chat_id)
+    elif is_all_caps:
+        try:
+            bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
+        except Exception:
+            pass
 
 
-# Обработка игрового процесса Лингвиселицы (проверяем наличие активного слова у пользователя)
-@bot.message_handler(func=lambda message: message.chat.id in chats and chats[message.chat.id].get('w') is not None)
+# Игровой процесс Лингвиселицы
+@bot.message_handler(
+    func=lambda msg: msg.chat.id in chats and chats[msg.chat.id].get('game') == 'lingviselica' and chats[
+        msg.chat.id].get('w') is not None)
 def handle_hangman_message(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -280,8 +349,7 @@ def handle_hangman_message(message):
                 ch['abc'][c] = 1
             ch['mis'] += 1
             try:
-                bot.set_message_reaction(chat_id, message.message_id,
-                                         [types.ReactionTypeEmoji("👎")])
+                bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
             except Exception:
                 pass
             upd(chat_id)
@@ -293,7 +361,6 @@ def handle_hangman_message(message):
                 show_game_over_menu(chat_id, user_id, 'lose')
 
 
-# Запуск бота
 if __name__ == '__main__':
     print("[INFO] Бот успешно запущен...")
     bot.infinity_polling()
