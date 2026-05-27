@@ -46,7 +46,7 @@ except FileNotFoundError:
 cleaned_words_set = set()
 combo_freq = defaultdict(int)
 try:
-    with open('russian.txt', 'r', encoding='windows-1251') as f:
+    with open('russian.txt', 'r') as f:
         for line in f:
             word = line.strip()
             if re.match(r'^[а-яё]+$', word):
@@ -133,7 +133,9 @@ def init_user(user_id):
 def get_main_menu_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     for key, info in GAMES.items():
-        markup.add(types.InlineKeyboardButton(text=info['name'], callback_data=f"open_{key}"))
+        markup.add(types.InlineKeyboardButton(text=info['name'], callback_data=f"open_{key}", style='primary'))
+    # Добавление кнопки Справка в главное меню
+    markup.add(types.InlineKeyboardButton(text="Справка ℹ️", callback_data="open_help"))
     return markup
 
 
@@ -242,7 +244,7 @@ def homo_timeout(chat_id):
         if last_id is not None:
             update_score(last_id, last_name, -10)
         #    penalty_text = f"\nШтраф -10 баллов получает **{last_name}** за проигрыш сессии."
-        #else:
+        # else:
         #    penalty_text = f"\nНикто не получает штраф, так как ни одного слова не было угадано."
 
         bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**.",
@@ -287,19 +289,10 @@ def leaderboard_command(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
-@bot.message_handler(commands=['jajemdedov'])
+@bot.message_handler(commands=['removekeyboard'])
 def jajemdedov(message):
     remove_markup = types.ReplyKeyboardRemove()
     bot.send_message(message.chat.id, "Скрываю клавиатуру букв...", reply_markup=remove_markup)
-
-
-@bot.message_handler(commands=['test'])
-def test(message):
-    if frazeos:
-        ch = random.choice(list(frazeos.keys()))
-        bot.reply_to(message, text=f"**Пример:** {ch} — {frazeos[ch]}", parse_mode='Markdown')
-    else:
-        bot.reply_to(message, text="Словарь пуст.")
 
 
 # Обработка колбэков меню
@@ -322,6 +315,19 @@ def handle_callbacks(call):
         bot.clear_step_handler_by_chat_id(chat_id)
         bot.edit_message_text("Выбирай мини-игру из списка:", chat_id, message_id,
                               reply_markup=get_main_menu_keyboard())
+        bot.answer_callback_query(call.id)
+        return
+
+    if data == "open_help":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu"))
+        bot.edit_message_text("""Бот создан @nimixail, @usenkoam, @autopsied, @cizzef в мае 2026 года в рамках проекта по программированию первого курса ФиКЛ ВШЭ. Если есть предложения или нашли ошибки, пишите @nimixail.
+
+*Доступные команды:*
+/start — главное меню
+/leaderboard — топ лучших игроков бота 🏆
+/removekeyboard — удалить клавиатуру с кнопками, если почему-то не убралась сама
+""", chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
         bot.answer_callback_query(call.id)
         return
 
