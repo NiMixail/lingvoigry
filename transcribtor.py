@@ -76,4 +76,5 @@ def transcribtor(word):
         word = re.sub(r"([бвгджзклмнпрстфхцш])([бвгджзклмнпрстфхцш]'|[йчщ])", r"\1'\2", word)
     word = word.replace("щ'", "ш'")
     word = word.replace("щ", "ш'")
+    word = word.replace('ч', "ч'")
     return word.lower()
