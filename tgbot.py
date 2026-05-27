@@ -2,6 +2,7 @@ import os
 import re
 import random
 import threading
+import json
 from collections import defaultdict
 import telebot
 from telebot import types
@@ -68,11 +69,60 @@ homo_combos = {
 
 GAMES = {
     'lingviselica': {'name': 'Лингвиселица 🪓', 'desc': 'Угадай лингвистический термин или фразеологизм по буквам.'},
-    'homo': {'name': 'ХОМО 💡', 'desc': 'Придумай слово, содержащее заданное буквосочетание (чем больше сложность, тем более редкие попадаются). На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
+    'homo': {'name': 'ХОМО 💡',
+             'desc': 'Придумай слово, содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
 }
 
 USER_MEMORY = {}
 chats = {}
+LEADERBOARD_FILE = 'leaderboard.json'
+leaderboard = {}
+
+
+# Функции работы с лидербордом
+def load_leaderboard():
+    global leaderboard
+    if os.path.exists(LEADERBOARD_FILE):
+        try:
+            with open(LEADERBOARD_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                leaderboard = {int(k): v for k, v in data.items()}
+        except Exception as e:
+            print(f"[Error loading leaderboard]: {e}")
+            leaderboard = {}
+    else:
+        leaderboard = {}
+
+
+def save_leaderboard():
+    try:
+        with open(LEADERBOARD_FILE, 'w', encoding='utf-8') as f:
+            json.dump({str(k): v for k, v in leaderboard.items()}, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"[Error saving leaderboard]: {e}")
+
+
+def update_score(user_id, username, points):
+    if not user_id:
+        return
+    load_leaderboard()
+    if user_id not in leaderboard:
+        leaderboard[user_id] = {'name': username or f"User {user_id}", 'score': 0}
+    if username:
+        leaderboard[user_id]['name'] = username
+    leaderboard[user_id]['score'] += points
+    save_leaderboard()
+
+
+def get_user_display_name(user):
+    if not user:
+        return "Аноним"
+    if user.username:
+        return f"@{user.username}"
+    first = user.first_name or ""
+    last = user.last_name or ""
+    name = f"{first} {last}".strip()
+    return name if name else f"User {user.id}"
 
 
 def init_user(user_id):
@@ -111,6 +161,7 @@ def start_hangman_game(chat_id, user_id, mode):
 
     chats[chat_id] = {
         'game': 'lingviselica',
+        'mode': mode,
         'w': word,
         'view': view,
         'mis': 0,
@@ -147,7 +198,9 @@ def start_homo_game(chat_id, user_id, lvl):
         'score': 0,
         'active': True,
         'timer': None,
-        'combo': None
+        'combo': None,
+        'last_guesser_id': None,
+        'last_guesser_name': None
     }
     send_next_homo_combo(chat_id)
 
@@ -182,7 +235,17 @@ def homo_timeout(chat_id):
         score = session['score']
         session['timer'] = None
 
-        bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**",
+        penalty_text = ""
+        last_id = session.get('last_guesser_id')
+        last_name = session.get('last_guesser_name')
+
+        if last_id is not None:
+            update_score(last_id, last_name, -10)
+        #    penalty_text = f"\nШтраф -10 баллов получает **{last_name}** за проигрыш сессии."
+        #else:
+        #    penalty_text = f"\nНикто не получает штраф, так как ни одного слова не было угадано."
+
+        bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**.",
                          parse_mode="Markdown")
 
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -198,16 +261,30 @@ def homo_timeout(chat_id):
 # Команды
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    if message.chat.type != 'private':
-        bot.reply_to(message, "❌ Бот работает только в личных сообщениях.")
-        return
-
     user_id = message.from_user.id
     init_user(user_id)
     USER_MEMORY[user_id]['active_game'] = None
 
     bot.send_message(message.chat.id, "👋 **Добро пожаловать в лингвистический игровой бот!**\n\nВыбирай мини-игру:",
                      reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=['leaderboard'])
+def leaderboard_command(message):
+    load_leaderboard()
+    if not leaderboard:
+        bot.reply_to(message, "🏆 Лидерборд пока пуст. Будьте первыми!")
+        return
+
+    sorted_users = sorted(leaderboard.items(), key=lambda x: x[1]['score'], reverse=True)
+    top_10 = sorted_users[:10]
+
+    text = "🏆 **ТОП-10 ИГРОКОВ** 🏆\n\n"
+    for i, (uid, data) in enumerate(top_10, 1):
+        safe_name = data['name'].replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+        text += f"{i}. {safe_name} — **{data['score']}** баллов\n"
+
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
 @bot.message_handler(commands=['jajemdedov'])
@@ -297,18 +374,26 @@ def handle_homo_message(message):
     session = chats[chat_id]
     text = message.text.strip()
 
-    is_alphabetic = re.match(r'^[А-ЯЁа-яё]+$', text)
+    is_alphabetic = bool(re.match(r'^[А-ЯЁа-яё]+$', text))
     is_all_caps = text.isupper() if is_alphabetic else False
-    contains_combo = session['combo'] in text if is_all_caps else False
-    in_dict = text.lower() in cleaned_words_set if contains_combo else False
+    contains_combo = (session['combo'] in text) if is_all_caps else False
+    in_dict = (text.lower() in cleaned_words_set) if contains_combo else False
 
     if is_all_caps and contains_combo and in_dict:
         if session['timer']:
             session['timer'].cancel()
             session['timer'] = None
         session['score'] += 1
+
+        points = 1 if session['lvl'] == 'easy' else (2 if session['lvl'] == 'medium' else 3)
+        username = get_user_display_name(message.from_user)
+        update_score(message.from_user.id, username, points)
+
+        session['last_guesser_id'] = message.from_user.id
+        session['last_guesser_name'] = username
+
         send_next_homo_combo(chat_id)
-    elif is_all_caps:
+    else:
         try:
             bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
         except Exception:
@@ -339,6 +424,10 @@ def handle_hangman_message(message):
                             ch['view'] = ch['view'][:i * 2] + c + ' ' + ch['view'][(i + 1) * 2:]
                     upd(chat_id)
             if ch['view'] == ''.join(i + ' ' for i in ch['w']):
+                points = 20 if ch['mode'] == 'terms' else 10
+                username = get_user_display_name(message.from_user)
+                update_score(message.from_user.id, username, points)
+
                 bot.reply_to(message,
                              f"🎊🌟 ПОБЕДА! 🌟🎊 \nБыло действительно загадано <b>{ch['w']}</b> — {ch['info']}",
                              parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
@@ -354,6 +443,10 @@ def handle_hangman_message(message):
                 pass
             upd(chat_id)
             if ch['mis'] >= len(hangman) - 1:
+                points = -20 if ch['mode'] == 'terms' else -10
+                username = get_user_display_name(message.from_user)
+                update_score(message.from_user.id, username, points)
+
                 bot.reply_to(message,
                              text=f'🥀💀 ВЫ ПРОИГРАЛИ! 💀🥀 \nБыло загадано <b>{ch["w"]}</b> — {ch["info"]}',
                              parse_mode='HTML', reply_markup=types.ReplyKeyboardRemove())
@@ -362,5 +455,6 @@ def handle_hangman_message(message):
 
 
 if __name__ == '__main__':
+    load_leaderboard()
     print("[INFO] Бот успешно запущен...")
     bot.infinity_polling()
