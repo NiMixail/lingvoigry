@@ -678,7 +678,7 @@ def handle_linguesser_message(message):
         elif ch['tries'] == 0:
             bot.send_message(message.chat.id, f"Вы проиграли! Это {ch['lang'].lower()}.")
             username = get_user_display_name(message.from_user)
-            update_score(message.from_user.id, username, ch['score'] - 5)
+            update_score(message.from_user.id, username, ch['score'] - 2)
             linguesser_gameover(chat_id, user_id)
 
 
