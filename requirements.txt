@@ -2,7 +2,7 @@ gTTS==2.5.4
 matplotlib==3.10.9
 miniaudio==1.71
 numpy==2.4.6
-parselmouth==1.1.1
+praat-parselmouth==0.4.7
 pyTelegramBotAPI==4.33.0
 Requests==2.34.2
 seaborn==0.13.2
