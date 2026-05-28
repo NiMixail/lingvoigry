@@ -302,7 +302,6 @@ def start_linguesser_game(chat_id, user_id, lvl):
 
 def send_lang(chat_id, user_id, lvl):
     ch = chats[chat_id]
-    end = False
     while ch["lang"] in ch["played"]:
         if lvl == "easy":
             with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
@@ -323,19 +322,13 @@ def send_lang(chat_id, user_id, lvl):
         
         ch['lang'] = lang
         ch['info'] = info
-        if (ch['lvl'] == "easy" and len(ch['played']) == 70) or (ch['lvl'] == "medium" and len(ch['played']) == 79) or (ch['lvl'] == "hard" and len(ch['played']) == 55):
-            bot.send_message(chat_id, "Поздравляем! Языки закончились!")
-            username = get_user_display_name(message.from_user)
-            update_score(message.from_user.id, username, ch['score'])
-            linguesser_gameover(chat_id, user_id, "win")
-            end = True
-            break
+        
             
     
-    if (text[-4:] == ".jpg") and (end == False):
+    if (text[-4:] == ".jpg"):
         with open(f"угадай язык/{text}", 'rb') as photo:
             bot.send_photo(chat_id, photo)
-    elif end == False:
+    else:
         bot.send_message(chat_id, text)
 
 
@@ -676,8 +669,13 @@ def handle_linguesser_message(message):
             ch['score'] += 5
         elif ch['lvl'] == "hard":
             ch['score'] += 10
-
-        send_lang(chat_id, user_id, ch["lvl"])
+        if (ch['lvl'] == "easy" and len(ch['played']) == 70) or (ch['lvl'] == "medium" and len(ch['played']) == 79) or (ch['lvl'] == "hard" and len(ch['played']) == 55):
+            bot.send_message(chat_id, "Поздравляем! Языки закончились!")
+            username = get_user_display_name(message.from_user)
+            update_score(message.from_user.id, username, ch['score'])
+            linguesser_gameover(chat_id, user_id, "win")
+        else:   
+            send_lang(chat_id, user_id, ch["lvl"])
     else:
         ch["tries"] -= 1
         try:
