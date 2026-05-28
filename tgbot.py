@@ -78,9 +78,9 @@ except FileNotFoundError:
     print("[WARNING] russian.txt не найден.")
 
 homo_combos = {
-    'easy': [s for s, count in combo_freq.items() if 300 <= count <= 699],
-    'medium': [s for s, count in combo_freq.items() if 100 <= count <= 299],
-    'hard': [s for s, count in combo_freq.items() if 10 <= count <= 99]
+    'easy': [s for s, count in combo_freq.items() if 200 <= count <= 499],
+    'medium': [s for s, count in combo_freq.items() if 50 <= count <= 199],
+    'hard': [s for s, count in combo_freq.items() if 5 <= count <= 49]
 }
 
 GAMES = {
@@ -96,6 +96,7 @@ USER_MEMORY = {}
 chats = {}
 LEADERBOARD_FILE = 'leaderboard.json'
 leaderboard = {}
+leaderboard_lock = threading.RLock()
 
 
 def tokenize(text):
@@ -135,36 +136,42 @@ def compare_words(guess, target):
 # Функции работы с лидербордом
 def load_leaderboard():
     global leaderboard
-    if os.path.exists(LEADERBOARD_FILE):
-        try:
-            with open(LEADERBOARD_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                leaderboard = {int(k): v for k, v in data.items()}
-        except Exception as e:
-            print(f"[Error loading leaderboard]: {e}")
+    with leaderboard_lock:
+        if os.path.exists(LEADERBOARD_FILE):
+            try:
+                with open(LEADERBOARD_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    leaderboard = {int(k): v for k, v in data.items()}
+            except Exception as e:
+                print(f"[Error loading leaderboard]: {e}")
+                if not leaderboard:
+                    leaderboard = {}
+        else:
             leaderboard = {}
-    else:
-        leaderboard = {}
 
 
 def save_leaderboard():
-    try:
-        with open(LEADERBOARD_FILE, 'w', encoding='utf-8') as f:
-            json.dump({str(k): v for k, v in leaderboard.items()}, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"[Error saving leaderboard]: {e}")
+    with leaderboard_lock:
+        try:
+            temp_file = LEADERBOARD_FILE + '.tmp'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump({str(k): v for k, v in leaderboard.items()}, f, ensure_ascii=False, indent=4)
+            os.replace(temp_file, LEADERBOARD_FILE)
+        except Exception as e:
+            print(f"[Error saving leaderboard]: {e}")
 
 
 def update_score(user_id, username, points):
     if not user_id:
         return
-    load_leaderboard()
-    if user_id not in leaderboard:
-        leaderboard[user_id] = {'name': username or f"User {user_id}", 'score': 0}
-    if username:
-        leaderboard[user_id]['name'] = username
-    leaderboard[user_id]['score'] += points
-    save_leaderboard()
+    with leaderboard_lock:
+        load_leaderboard()
+        if user_id not in leaderboard:
+            leaderboard[user_id] = {'name': username or f"User {user_id}", 'score': 0}
+        if username:
+            leaderboard[user_id]['name'] = username
+        leaderboard[user_id]['score'] += points
+        save_leaderboard()
 
 
 def get_user_display_name(user):
@@ -319,12 +326,10 @@ def send_lang(chat_id, user_id, lvl):
                 langs = f.readlines()
                 a = (random.randint(0, 54)) * 4
                 lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
-        
+
         ch['lang'] = lang
         ch['info'] = info
-        
-            
-    
+
     if (text[-4:] == ".jpg"):
         with open(f"угадай язык/{text}", 'rb') as photo:
             bot.send_photo(chat_id, photo)
@@ -399,6 +404,25 @@ def homo_timeout(chat_id):
 
 
 # Функции игры ВОРДЛ (Gramle)
+def get_gramle_status_text(session):
+    history = list(session['attempts_history'])
+    attempts_count = len(history)
+    if session.get('active'):
+        current_attempt_num = attempts_count + 1
+        current_guess_str = " ".join(session['current_guess'])
+        current_line = f"Попытка {current_attempt_num}: ({current_guess_str})"
+        display_lines = []
+        for idx, att in enumerate(history):
+            display_lines.append(f"Попытка {idx + 1}: {att}")
+        display_lines.append(current_line)
+        history_text = "\n".join(display_lines)
+    else:
+        history_text = "\n".join([f"Попытка {idx + 1}: {att}" for idx, att in enumerate(history)])
+        if not history_text:
+            history_text = "<i>Ожидание первой попытки...</i>"
+    return f"📝 <b>Результаты ваших попыток ({attempts_count}/6):</b>\n\n{history_text}\n\nПродолжайте вводить символы:"
+
+
 def start_gramle_game(chat_id, user_id):
     init_user(user_id)
     USER_MEMORY[user_id]['active_game'] = 'gramle'
@@ -450,22 +474,23 @@ def start_gramle_game(chat_id, user_id):
     except Exception:
         pass
 
-    msg = bot.send_message(
-        chat_id,
-        "📝 <b>Результаты ваших попыток (0/6):</b>\n\n<i>Ожидание первой попытки...</i>",
-        parse_mode="HTML"
-    )
-
     chats[chat_id] = {
         'game': 'gramle',
         'word': word,
         'target': target,
         'attempts_history': [],
         'current_guess': [],
-        'last_msgs': [],
-        'msg_id': msg.message_id,
+        'msg_id': None,
         'active': True
     }
+
+    initial_text = get_gramle_status_text(chats[chat_id])
+    msg = bot.send_message(
+        chat_id,
+        initial_text,
+        parse_mode="HTML"
+    )
+    chats[chat_id]['msg_id'] = msg.message_id
 
 
 def show_gramle_game_over_menu(chat_id, user_id, status):
@@ -492,17 +517,18 @@ def start_command(message):
 @bot.message_handler(commands=['leaderboard'])
 def leaderboard_command(message):
     load_leaderboard()
-    if not leaderboard:
-        bot.reply_to(message, "🏆 Лидерборд пока пуст. Будьте первыми!")
-        return
+    with leaderboard_lock:
+        if not leaderboard:
+            bot.reply_to(message, "🏆 Лидерборд пока пуст. Будьте первыми!")
+            return
 
-    sorted_users = sorted(leaderboard.items(), key=lambda x: x[1]['score'], reverse=True)
-    top_10 = sorted_users[:10]
+        sorted_users = sorted(leaderboard.items(), key=lambda x: x[1]['score'], reverse=True)
+        top_10 = sorted_users[:10]
 
-    text = "🏆 **ТОП-10 ИГРОКОВ** 🏆\n\n"
-    for i, (uid, data) in enumerate(top_10, 1):
-        safe_name = data['name'].replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-        text += f"{i}. {safe_name} — **{data['score']}** баллов\n"
+        text = "🏆 **ТОП-10 ИГРОКОВ** 🏆\n\n"
+        for i, (uid, data) in enumerate(top_10, 1):
+            safe_name = data['name'].replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+            text += f"{i}. {safe_name} — **{data['score']}** баллов\n"
 
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
@@ -621,9 +647,9 @@ def handle_callbacks(call):
 def handle_homo_message(message):
     chat_id = message.chat.id
     session = chats[chat_id]
-    text = message.text.strip()
+    text = message.text.strip().replace('Ё', 'Е')
 
-    is_alphabetic = bool(re.match(r'^[А-ЯЁа-яё]+$', text))
+    is_alphabetic = bool(re.match(r'^[А-Яа-я]+$', text))
     is_all_caps = text.isupper() if is_alphabetic else False
     contains_combo = (session['combo'] in text) if is_all_caps else False
     in_dict = (text.lower() in cleaned_words_set) if contains_combo else False
@@ -669,12 +695,13 @@ def handle_linguesser_message(message):
             ch['score'] += 5
         elif ch['lvl'] == "hard":
             ch['score'] += 10
-        if (ch['lvl'] == "easy" and len(ch['played']) == 70) or (ch['lvl'] == "medium" and len(ch['played']) == 79) or (ch['lvl'] == "hard" and len(ch['played']) == 55):
+        if (ch['lvl'] == "easy" and len(ch['played']) == 70) or (ch['lvl'] == "medium" and len(ch['played']) == 79) or (
+                ch['lvl'] == "hard" and len(ch['played']) == 55):
             bot.send_message(chat_id, "Поздравляем! Языки закончились!")
             username = get_user_display_name(message.from_user)
             update_score(message.from_user.id, username, ch['score'])
             linguesser_gameover(chat_id, user_id, "win")
-        else:   
+        else:
             send_lang(chat_id, user_id, ch["lvl"])
     else:
         ch["tries"] -= 1
@@ -702,36 +729,35 @@ def handle_gramle_message(message):
     session = chats[chat_id]
     text = message.text.strip()
 
-    if text == "⌫":
-        try:
-            bot.delete_message(chat_id, message.message_id)
-        except Exception:
-            pass
+    if text != "⌫" and text not in symbols:
+        return
 
+    try:
+        bot.delete_message(chat_id, message.message_id)
+    except Exception:
+        pass
+
+    if text == "⌫":
         if session['current_guess']:
             session['current_guess'].pop()
-            if session['last_msgs']:
-                last_msg_id = session['last_msgs'].pop()
-                try:
-                    bot.delete_message(chat_id, last_msg_id)
-                except Exception:
-                    pass
+            updated_text = get_gramle_status_text(session)
+            try:
+                bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=session['msg_id'],
+                    text=updated_text,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                new_msg = bot.send_message(chat_id, updated_text, parse_mode="HTML")
+                session['msg_id'] = new_msg.message_id
         return
 
     if text in symbols:
         session['current_guess'].append(text)
-        session['last_msgs'].append(message.message_id)
 
         if len(session['current_guess']) == 6:
             result_string = "".join(session['current_guess'])
-
-            for msg_id in session['last_msgs']:
-                try:
-                    bot.delete_message(chat_id, msg_id)
-                except Exception:
-                    pass
-            session['last_msgs'].clear()
-
             result_formatted = compare_words(result_string, session['target'])
             session['attempts_history'].append(result_formatted)
 
@@ -758,6 +784,7 @@ def handle_gramle_message(message):
                 except Exception:
                     bot.send_message(chat_id, final_text, parse_mode="HTML")
 
+                # Скрываем виртуальную клавиатуру
                 try:
                     rem_msg = bot.send_message(chat_id, "Выход из игрового режима...",
                                                reply_markup=types.ReplyKeyboardRemove())
@@ -793,7 +820,8 @@ def handle_gramle_message(message):
 
                     show_gramle_game_over_menu(chat_id, message.from_user.id, 'lose')
                 else:
-                    updated_text = f"📝 <b>Результаты ваших попыток ({len(session['attempts_history'])}/6):</b>\n\n{history_text}\n\nПродолжайте вводить символы:"
+                    session['current_guess'].clear()
+                    updated_text = get_gramle_status_text(session)
                     try:
                         bot.edit_message_text(
                             chat_id=chat_id,
@@ -802,11 +830,20 @@ def handle_gramle_message(message):
                             parse_mode="HTML"
                         )
                     except Exception:
-                        # В случае ошибки редактирования отправляем новое и сохраняем его ID
                         new_msg = bot.send_message(chat_id, updated_text, parse_mode="HTML")
                         session['msg_id'] = new_msg.message_id
-
-                    session['current_guess'].clear()
+        else:
+            updated_text = get_gramle_status_text(session)
+            try:
+                bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=session['msg_id'],
+                    text=updated_text,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                new_msg = bot.send_message(chat_id, updated_text, parse_mode="HTML")
+                session['msg_id'] = new_msg.message_id
 
 
 # Игровой процесс Лингвиселицы
