@@ -245,8 +245,11 @@ def show_game_over_menu(chat_id, user_id, status):
 
 # функции игры угадай язык
 
-def linguesser_gameover(chat_id, user_id):
-    text = "Попробуем ещё раз?"
+def linguesser_gameover(chat_id, user_id, status):
+    if status == "lose":
+        text = "Попробуем ещё раз?"
+    else:
+        text = "Продолжим?"
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🖖 Сыграть снова (Режим: простой)", callback_data="play_linguesser_easy"),
@@ -299,6 +302,7 @@ def start_linguesser_game(chat_id, user_id, lvl):
 
 def send_lang(chat_id, user_id, lvl):
     ch = chats[chat_id]
+    end = False
     while ch["lang"] in ch["played"]:
         if lvl == "easy":
             with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
@@ -316,13 +320,21 @@ def send_lang(chat_id, user_id, lvl):
                 langs = f.readlines()
                 a = (random.randint(0, 54)) * 4
                 lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
+        
         ch['lang'] = lang
         ch['info'] = info
-
-    if text[-4:] == ".jpg":
+        if (ch['lvl'] == "easy" and len(ch['played'] == 70) or (ch['lvl'] == "medium" and len(ch['played'] == 79) or (ch['lvl'] == "hard" and len(ch['played'] == 55):
+            bot.send_message(chat_id, "Поздравляем! Языки закончились!")
+            update_score(message.from_user.id, username, ch['score'])
+            linguesser_gameover(chat_id, user_id, "win")
+            end = True
+            break
+            
+    
+    if (text[-4:] == ".jpg") and (end == False):
         with open(f"угадай язык/{text}", 'rb') as photo:
             bot.send_photo(chat_id, photo)
-    else:
+    elif end == False:
         bot.send_message(chat_id, text)
 
 
@@ -678,8 +690,8 @@ def handle_linguesser_message(message):
         elif ch['tries'] == 0:
             bot.send_message(message.chat.id, f"Вы проиграли! Это {ch['lang'].lower()}.")
             username = get_user_display_name(message.from_user)
-            update_score(message.from_user.id, username, ch['score'] - 2)
-            linguesser_gameover(chat_id, user_id)
+            update_score(message.from_user.id, username, ch['score'])
+            linguesser_gameover(chat_id, user_id, "lose")
 
 
 # Игровой процесс ВОРДЛ (Gramle)
