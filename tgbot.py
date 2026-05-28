@@ -325,6 +325,7 @@ def send_lang(chat_id, user_id, lvl):
         ch['info'] = info
         if (ch['lvl'] == "easy" and len(ch['played'] == 70) or (ch['lvl'] == "medium" and len(ch['played'] == 79) or (ch['lvl'] == "hard" and len(ch['played'] == 55):
             bot.send_message(chat_id, "Поздравляем! Языки закончились!")
+            username = get_user_display_name(message.from_user)
             update_score(message.from_user.id, username, ch['score'])
             linguesser_gameover(chat_id, user_id, "win")
             end = True
