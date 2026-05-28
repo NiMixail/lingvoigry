@@ -88,8 +88,8 @@ GAMES = {
     'homo': {'name': 'ХОМО 💡',
              'desc': 'Придумай слово (любой части речи, в любой форме), содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'},
     'gramle': {'name': 'RuGramle 📊',
-               'desc': 'Угадайте транскрипцию (6 звуков) русского существительного по его спектрограмме. Игра по правилам Wordle: жирное выделение = жёлтый цвет, жирное с подчёркиванием = зелёный цвет.'}
-}
+               'desc': 'Угадайте транскрипцию (6 звуков) русского существительного по его спектрограмме. Игра по правилам Wordle: жирное выделение = жёлтый цвет, жирное с подчёркиванием = зелёный цвет.'},
+           'linguesser': {'name': 'Угадай язык 📖', 'desc': 'Угадай язык по фрагменту текста (1 статья всеобщей декларации прав человека). На отгадку дается три попытки. После каждой попытки дается подсказка.'}}
 
 USER_MEMORY = {}
 chats = {}
@@ -240,6 +240,87 @@ def show_game_over_menu(chat_id, user_id, status):
         types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu")
     )
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
+
+#функции игры угадай язык
+
+def linguesser_gameover(chat_id, user_id):
+    text = "Попробуем ещё раз?"
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🖖 Сыграть снова (Режим: простой)", callback_data="play_linguesser_easy"),
+        types.InlineKeyboardButton("⚡️ Сыграть снова (Режим: средний)", callback_data="play_linguesser_medium"),
+        types.InlineKeyboardButton("🤯 Сыграть снова (Режим: сложный)", callback_data="play_linguesser_hard"),
+        types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu")
+    )
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
+
+def start_linguesser_game(chat_id, user_id, lvl):
+    
+    if lvl == "easy":
+        with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
+            langs = f.readlines()
+            a = (random.randint(0,69))*4
+            
+            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+    elif lvl == "medium":
+        with open('угадай язык/средний.txt', 'r', encoding='utf-8') as f:
+            langs = f.readlines()
+            a = (random.randint(0,78))*4
+            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+    elif lvl == "hard":
+        with open('угадай язык/сложный.txt', 'r', encoding='utf-8') as f:
+            langs = f.readlines()
+            a = (random.randint(0,54))*4
+            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+    
+    if text[-4:] == ".jpg":
+        with open(f"угадай язык/{text}", 'rb') as photo:
+            bot.send_photo(chat_id, photo)
+    else:
+
+        bot.send_message(chat_id, text)
+
+    init_user(user_id)
+    USER_MEMORY[user_id]['active_game'] = 'linguesser'
+    chats[chat_id] = {
+        'game': 'linguesser',
+        'lvl': lvl,
+        'score': 0,
+        'tries': 3,
+        'lang': lang,
+        'info': info,
+        'text': text,
+        'played': []
+
+    }
+
+def send_lang(chat_id, user_id, lvl):
+    ch = chats[chat_id]
+    while ch["lang"] in ch["played"]:
+        if lvl == "easy":
+            with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
+                langs = f.readlines()
+                a = (random.randint(0,69))*4
+            
+                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+        elif lvl == "medium":
+            with open('угадай язык/средний.txt', 'r', encoding='utf-8') as f:
+                langs = f.readlines()
+                a = (random.randint(0,78))*4
+                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+        elif lvl == "hard":
+            with open('угадай язык/сложный.txt', 'r', encoding='utf-8') as f:
+                langs = f.readlines()
+                a = (random.randint(0,54))*4
+                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+        ch['lang'] = lang
+        ch['info'] = info
+
+    if text[-4:] == ".jpg":
+        with open(f"угадай язык/{text}", 'rb') as photo:
+            bot.send_photo(chat_id, photo)
+    else:
+        bot.send_message(chat_id, text)
 
 
 # Функции игры ХОМО
@@ -489,6 +570,16 @@ def handle_callbacks(call):
             )
             text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}"
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+        elif game_key == "linguesser":
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🖖 Простой 🖖", callback_data="play_linguesser_easy"),
+                types.InlineKeyboardButton("⚡️ Средний ⚡️", callback_data="play_linguesser_medium"),
+                types.InlineKeyboardButton("🤯 Сложный 🤯", callback_data="play_linguesser_hard")
+            )
+            markup.add(types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu"))
+            text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}\n\n**Выберите сложность:**"
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
 
         bot.answer_callback_query(call.id)
         return
@@ -507,6 +598,8 @@ def handle_callbacks(call):
             start_homo_game(chat_id, user_id, parts[2])
         elif game_key == 'gramle':
             start_gramle_game(chat_id, user_id)
+        elif game_key == "linguesser":
+            start_linguesser_game(chat_id, user_id, parts[2])
 
         bot.answer_callback_query(call.id)
         return
@@ -545,6 +638,44 @@ def handle_homo_message(message):
             bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
         except Exception:
             pass
+
+# Игровой процесс угадай язык
+@bot.message_handler(
+    func=lambda msg: msg.chat.id in chats and chats[msg.chat.id].get('game') == 'linguesser' and chats[
+        msg.chat.id].get('lang') is not None)
+def handle_linguesser_message(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    ch = chats[chat_id]
+    t = message.text
+    
+    if ch["lang"].lower() == t.lower():
+        bot.reply_to(message, "Верно!")
+        ch["played"].append(ch["lang"])
+        ch["tries"] = 3
+        if ch['lvl'] == "easy":
+            ch['score'] += 2
+        elif ch['lvl'] == "medium":
+            ch['score'] += 5
+        elif ch['lvl'] == "hard":
+            ch['score'] += 10
+        
+        send_lang(chat_id, user_id, ch["lvl"])
+    else:
+        ch["tries"] -= 1
+        try:
+            bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
+        except Exception:
+            pass
+        if ch["tries"] == 2:
+            bot.send_message(message.chat.id, f"Подсказка: первая буква в названии языка {ch["lang"][0]}.")
+        elif ch['tries'] == 1:
+            bot.send_message(message.chat.id, f"Подсказка: язык относится к таксонам {ch["info"]}.")
+        elif ch['tries'] == 0:
+            bot.send_message(message.chat.id, f"Вы проиграли! Это {ch["lang"].lower()}.")
+            username = get_user_display_name(message.from_user)
+            update_score(message.from_user.id, username, ch['score'])
+            linguesser_gameover(chat_id, user_id)
 
 
 # Игровой процесс ВОРДЛ (Gramle)
