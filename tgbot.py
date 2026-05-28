@@ -78,9 +78,9 @@ except FileNotFoundError:
     print("[WARNING] russian.txt не найден.")
 
 homo_combos = {
-    'easy': [s for s, count in combo_freq.items() if 200 <= count <= 499],
-    'medium': [s for s, count in combo_freq.items() if 50 <= count <= 199],
-    'hard': [s for s, count in combo_freq.items() if 5 <= count <= 49]
+    'easy': [s for s, count in combo_freq.items() if 100 <= count <= 500],
+    'medium': [s for s, count in combo_freq.items() if 10 <= count <= 100],
+    'hard': [s for s, count in combo_freq.items() if 5 <= count <= 15]
 }
 
 GAMES = {
@@ -388,7 +388,7 @@ def homo_timeout(chat_id):
         last_name = session.get('last_guesser_name')
 
         if last_id is not None:
-            update_score(last_id, last_name, -10)
+            update_score(last_id, last_name, -1)
 
         bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**.",
                          parse_mode="Markdown")
@@ -797,7 +797,7 @@ def handle_gramle_message(message):
                 if len(session['attempts_history']) >= 6:
                     session['active'] = False
                     username = get_user_display_name(message.from_user)
-                    update_score(message.from_user.id, username, -10)
+                    update_score(message.from_user.id, username, -5)
 
                     final_text = f"💀 <b>ИГРА ОКОНЧЕНА!</b> Попытки исчерпаны.\n\n{history_text}\n\nБыло загадано слово: <b>{session['word']}</b> [{session['target']}]"
                     try:
@@ -889,9 +889,8 @@ def handle_hangman_message(message):
                 pass
             upd(chat_id)
             if ch['mis'] >= len(hangman) - 1:
-                points = -20 if ch['mode'] == 'terms' else -10
                 username = get_user_display_name(message.from_user)
-                update_score(message.from_user.id, username, points)
+                update_score(message.from_user.id, username, -5)
 
                 bot.reply_to(message,
                              text=f'🥀💀 ВЫ ПРОИГРАЛИ! 💀🥀 \nБыло загадано <b>{ch["w"]}</b> — {ch["info"]}',
