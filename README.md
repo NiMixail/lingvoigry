@@ -8,4 +8,3 @@
 Для реализации наших идей мы воспользовались этими наработками:
 https://github.com/YannickJadoul/Parselmouth -- код для создания спектрограмм
 https://youtu.be/QlQlH-PRQBU?si=6KrlBQUml0ZwZPHP -- коды, представленные в этой серии уроков, использовались при создании бота
-https://ru.stackoverflow.com/questions/1581051/ -- обработка кнопок в боте
