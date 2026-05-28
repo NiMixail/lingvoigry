@@ -1,8 +1,9 @@
+import os
 import telebot
 import random
-from telebot.types import ReplyKeyboardMarkup,KeyboardButton
-bot = telebot.TeleBot("TOKEN")
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
+bot = telebot.TeleBot('8850874673:AAFNCF8uBohHutgg7X2pDwgYuSufSZOtCLM')
 
 import re
 
@@ -84,59 +85,61 @@ def transcribtor(word):
     word = word.replace("щ", "ш'")
     word = word.replace('ч', "ч'")
     return word.lower()
+
+
 def spectromaker(text):
     from gtts import gTTS
     import miniaudio
     import numpy as np
     import io
-    
+
     target_sample_rate = 48000
-    
+
     tts = gTTS(text=text, lang='ru')
     mp3_buffer = io.BytesIO()
     tts.write_to_fp(mp3_buffer)
     mp3_buffer.seek(0)
-    
-    decoded = miniaudio.decode(mp3_buffer.read(), nchannels=1, sample_rate=target_sample_rate, output_format=miniaudio.SampleFormat.SIGNED16)
+
+    decoded = miniaudio.decode(mp3_buffer.read(), nchannels=1, sample_rate=target_sample_rate,
+                               output_format=miniaudio.SampleFormat.SIGNED16)
     audio_numpy = np.frombuffer(decoded.samples, dtype=np.int16)
-    
+
     audio_float = audio_numpy.astype(np.float32) / 32768.0
-    
-    
+
     import parselmouth
     import matplotlib.pyplot as plt
     import seaborn as sns
-    
+
     sns.set()
-    
+
     snd = parselmouth.Sound(audio_float, sampling_frequency=target_sample_rate)
-    
+
     def draw_spectrogram(spectrogram, dynamic_range=70):
         X, Y = spectrogram.x_grid(), spectrogram.y_grid()
         with np.errstate(divide='ignore'):
-            sg_db = 10 * np.log10(spectrogram.values)   
+            sg_db = 10 * np.log10(spectrogram.values)
         plt.pcolormesh(X, Y, sg_db, vmin=sg_db.max() - dynamic_range, cmap='Greys')
         plt.ylim([spectrogram.ymin, spectrogram.ymax])
         plt.xlabel("time [s]")
         plt.ylabel("frequency [Hz]")
-    
+
     def draw_intensity(intensity):
         plt.plot(intensity.xs(), intensity.values.T, linewidth=3, color='w')
         plt.plot(intensity.xs(), intensity.values.T, linewidth=1, color='Red')
         plt.grid(False)
         plt.ylim(0)
         plt.ylabel("intensity [dB]")
-    
+
     intensity = snd.to_intensity()
     spectrogram = snd.to_spectrogram()
-    
+
     plt.figure()
     draw_spectrogram(spectrogram)
     plt.twinx()
     draw_intensity(intensity)
     plt.xlim([snd.xmin, snd.xmax])
     plt.savefig('image.png', dpi=300)
-    
+
 
 with open('wordlist.txt', 'r', encoding='utf-8') as f:
     lines = f.readlines()
@@ -147,13 +150,15 @@ spectromaker(word)
 user_arrays = {}
 user_last_msgs = {}
 
+symbols = ['а', 'о', 'у', 'э', 'ы', 'и', 'ь', 'ъ', 'ь°', 'ъ°', "б", "б'", "п", "п'", "г", "г'", "к", "к'", "д", "д'",
+           "т", "т'", "з", "з'", "с", "с'", "ж", "ж'", "ш", "ш'", "в", "в'", "ф", "ф'", "х", "х'", "н", "н'", "м", "м'",
+           "л", "л'", "р", "р'", "й", "ч'", "ц"]
 
-symbols = ['а','о','у','э','ы','и','ь','ъ','ь°','ъ°',"б","б'","п","п'","г","г'","к","к'","д","д'","т","т'","з","з'","с","с'","ж","ж'","ш","ш'","в","в'","ф","ф'","х","х'","н","н'","м","м'","л","л'","р","р'","й","ч'","ц"]
 
 def tokenize(text):
     tokens = []
     modifiers = {"'", "°"}
-    
+
     for char in text:
         if char in modifiers and tokens:
             tokens[-1] += char
@@ -161,96 +166,102 @@ def tokenize(text):
             tokens.append(char)
     return tokens
 
+
 def compare_words(guess, target):
     guess_tokens = tokenize(guess)
     target_tokens = tokenize(target)
-    
+
     length = len(guess_tokens)
     result = [None] * length
     target_chars = list(target_tokens)
-    
+
     for i in range(length):
         if i < len(target_tokens) and guess_tokens[i] == target_tokens[i]:
             result[i] = f"<b><u>{guess_tokens[i]}</u></b>"
             target_chars[i] = None
-            
+
     for i in range(length):
         if result[i] is not None:
-            continue 
-            
+            continue
+
         if guess_tokens[i] in target_chars:
             result[i] = f"<b>{guess_tokens[i]}</b>"
             target_chars[target_chars.index(guess_tokens[i])] = None
         else:
             result[i] = f"<s>{guess_tokens[i]}</s>"
-            
+
     return " ".join(result)
+
+
 @bot.message_handler(commands=['start'])
 def send_image_and_start(message):
     chat_id = message.chat.id
-    
+
     user_arrays[chat_id] = []
     user_last_msgs[chat_id] = []
-    
+
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = [KeyboardButton(sym) for sym in symbols]
     buttons.append(KeyboardButton("⌫"))
-    markup.add(*buttons, row_width=12) 
+    markup.add(*buttons, row_width=12)
     with open('image.png', 'rb') as photo:
         bot.send_photo(
-            chat_id, 
-            photo, 
-            caption="_ _ _ _ _ _", 
+            chat_id,
+            photo,
+            caption="_ _ _ _ _ _",
             reply_markup=markup
         )
+
 
 @bot.message_handler(func=lambda message: message.text in symbols)
 def handle_char(message):
     chat_id = message.chat.id
-    
+
     if chat_id not in user_arrays:
         return
-        
+
     user_arrays[chat_id].append(message.text)
-    
+
     user_last_msgs[chat_id].append(message.message_id)
- 
+
     if len(user_arrays[chat_id]) == 6:
         result_string = "".join(user_arrays[chat_id])
-        
+
         for msg_id in user_last_msgs[chat_id]:
-                    try:
-                        bot.delete_message(chat_id, msg_id)
-                    except Exception as e:
-                        print(f"Не удалось удалить сообщение {msg_id}: {e}")
-                        
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception as e:
+                print(f"Не удалось удалить сообщение {msg_id}: {e}")
+
         bot.send_message(
-            chat_id, 
-            compare_words(result_string, target), 
+            chat_id,
+            compare_words(result_string, target),
             parse_mode="HTML"
         )
-        
+
         user_arrays[chat_id].clear()
         user_last_msgs[chat_id].clear()
+
 
 @bot.message_handler(func=lambda message: message.text == "⌫")
 def handle_backspace(message):
     chat_id = message.chat.id
-    
+
     try:
         bot.delete_message(chat_id, message.message_id)
     except:
         pass
- 
+
     if chat_id in user_arrays and user_arrays[chat_id]:
         user_arrays[chat_id].pop()
-        
+
         if chat_id in user_last_msgs and user_last_msgs[chat_id]:
             last_msg_id = user_last_msgs[chat_id].pop()
             try:
                 bot.delete_message(chat_id, last_msg_id)
             except:
-                pass       
+                pass
+
 
 if __name__ == '__main__':
     print("Бот запущен...")

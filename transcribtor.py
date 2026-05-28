@@ -53,10 +53,10 @@ def transcribtor(word):
         word = re.sub(r'[у]([^аоиыэу]*[АОИЫЭУ])', r'У\1', word)
 
     if re.findall(r'[аоиыэу]', word):  # редукция
-        word = re.sub(r"('|й|ч|\b)([аиэ])", r'\1ь', word)
-        word = re.sub(r"('|й|ч|\b)([оу])", r'\1ь°', word)
-        word = re.sub(r"([^'йч]|\b)([аыэ])", r'\1ъ', word)
-        word = re.sub(r"([^'йч]|\b)([оу])", r'\1ъ°', word)
+        word = re.sub(r"('|й|ч|\b)([оаиэ])", r'\1ь', word)
+        word = re.sub(r"('|й|ч|\b)([у])", r'\1ь°', word)
+        word = re.sub(r"([^'йч]|\b)([оаыэ])", r'\1ъ', word)
+        word = re.sub(r"([^'йч]|\b)([у])", r'\1ъ°', word)
     if re.findall(r"[гдбвжз]'?$", word):  # оглушение
         word = re.sub(r"([гдбвжз])('?)$",
                       lambda m: {'г': 'к', 'д': 'т', 'б': 'п', 'в': 'ф', 'ж': 'ш', 'з': 'с'}[m.group(1)] + m.group(2),
@@ -72,8 +72,10 @@ def transcribtor(word):
                       lambda m: {'к': 'г', 'т': 'д', 'п': 'б', 'ф': 'в', 'ш': 'ж', 'щ': "ж'", 'с': 'з'}[
                                     m.group(1)] + m.group(2) + m.group(3) + m.group(4), word)
 
-    if re.findall(r"([бвгджзклмнпрстфхцш])([бвгджзклмнпрстфхцш]'|[йчщ])", word):
-        word = re.sub(r"([бвгджзклмнпрстфхцш])([бвгджзклмнпрстфхцш]'|[йчщ])", r"\1'\2", word)
+    word = word.replace("ст'", "с'т'")
+    word = word.replace("зд'", "з'д'")
+    word = word.replace("сн'", "с'н'")
+    word = word.replace("зн'", "з'н'")
     word = word.replace("щ'", "ш'")
     word = word.replace("щ", "ш'")
     word = word.replace('ч', "ч'")

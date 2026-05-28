@@ -7,16 +7,32 @@ from collections import defaultdict
 import telebot
 from telebot import types
 
+import matplotlib
+
+matplotlib.use('Agg')
+
 from hangman import hangman
+from transcribtor import transcribtor
+from spectromaker import spectromaker
 
 token = os.environ.get('TOKEN')
 bot = telebot.TeleBot(token)
 
 # Список символов кириллицы для буквенной клавиатуры "Лингвиселицы"
 cyr = list('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ-.')
-keyboard = types.ReplyKeyboardMarkup(row_width=5)
+hangman_keyboard = types.ReplyKeyboardMarkup(row_width=5)
 buttons = [types.KeyboardButton(text=letter) for letter in cyr]
-keyboard.add(*buttons)
+hangman_keyboard.add(*buttons)
+
+# Список символов для клавиатуры игры "Вордл" (Gramle)
+symbols = ['а', 'о', 'у', 'э', 'ы', 'и', 'ь', 'ъ', 'ь°', 'ъ°', "б", "б'", "п", "п'", "г", "г'", "к", "к'", "д", "д'",
+           "т", "т'", "з", "з'", "с", "с'", "ж", "ж'", "ш", "ш'", "в", "в'", "ф", "ф'", "х", "х'", "н", "н'", "м", "м'",
+           "л", "л'", "р", "р'", "й", "ч'", "ц"]
+
+gramle_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+gramle_buttons = [types.KeyboardButton(text=sym) for sym in symbols]
+gramle_buttons.append(types.KeyboardButton(text="⌫"))
+gramle_keyboard.add(*gramle_buttons, row_width=12)
 
 # Загрузка словарей терминов и фразеологизмов
 words = {}
@@ -70,13 +86,49 @@ homo_combos = {
 GAMES = {
     'lingviselica': {'name': 'Лингвиселица 🪓', 'desc': 'Угадай лингвистический термин или фразеологизм по буквам.'},
     'homo': {'name': 'ХОМО 💡',
-             'desc': 'Придумай слово (любой части речи, в любой форме), содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'}
+             'desc': 'Придумай слово (любой части речи, в любой форме), содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'},
+    'gramle': {'name': 'RuGramle 📊',
+               'desc': 'Угадайте транскрипцию (6 звуков) русского существительного по его спектрограмме. Игра по правилам Wordle: жирное выделение = жёлтый цвет, жирное с подчёркиванием = зелёный цвет.'}
 }
 
 USER_MEMORY = {}
 chats = {}
 LEADERBOARD_FILE = 'leaderboard.json'
 leaderboard = {}
+
+
+def tokenize(text):
+    tokens = []
+    modifiers = {"'", "°"}
+    for char in text:
+        if char in modifiers and tokens:
+            tokens[-1] += char
+        else:
+            tokens.append(char)
+    return tokens
+
+
+def compare_words(guess, target):
+    guess_tokens = tokenize(guess)
+    target_tokens = tokenize(target)
+    length = len(guess_tokens)
+    result = [None] * length
+    target_chars = list(target_tokens)
+
+    for i in range(length):
+        if i < len(target_tokens) and guess_tokens[i] == target_tokens[i]:
+            result[i] = f"<b><u>{guess_tokens[i]}</u></b>"
+            target_chars[i] = None
+
+    for i in range(length):
+        if result[i] is not None:
+            continue
+        if guess_tokens[i] in target_chars:
+            result[i] = f"<b>{guess_tokens[i]}</b>"
+            target_chars[target_chars.index(guess_tokens[i])] = None
+        else:
+            result[i] = f"<s>{guess_tokens[i]}</s>"
+    return " ".join(result)
 
 
 # Функции работы с лидербордом
@@ -134,7 +186,6 @@ def get_main_menu_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     for key, info in GAMES.items():
         markup.add(types.InlineKeyboardButton(text=info['name'], callback_data=f"open_{key}", style='primary'))
-    # Добавление кнопки Справка в главное меню
     markup.add(types.InlineKeyboardButton(text="Справка ℹ️", callback_data="open_help"))
     return markup
 
@@ -159,7 +210,8 @@ def start_hangman_game(chat_id, user_id, mode):
     info = source_dict[word]
     view = ''.join(i + ' ' if i == ' ' else '_ ' for i in word)
 
-    bot.send_message(chat_id, "(Нажимайте на кнопки с буквами или введите догадку целиком)", reply_markup=keyboard)
+    bot.send_message(chat_id, "(Нажимайте на кнопки с буквами или введите догадку целиком)",
+                     reply_markup=hangman_keyboard)
 
     chats[chat_id] = {
         'game': 'lingviselica',
@@ -237,15 +289,11 @@ def homo_timeout(chat_id):
         score = session['score']
         session['timer'] = None
 
-        penalty_text = ""
         last_id = session.get('last_guesser_id')
         last_name = session.get('last_guesser_name')
 
         if last_id is not None:
             update_score(last_id, last_name, -10)
-        #    penalty_text = f"\nШтраф -10 баллов получает **{last_name}** за проигрыш сессии."
-        # else:
-        #    penalty_text = f"\nНикто не получает штраф, так как ни одного слова не было угадано."
 
         bot.send_message(chat_id, f"⏱ Время вышло!\nИгра окончена. Вы успели назвать слов: **{score}**.",
                          parse_mode="Markdown")
@@ -258,6 +306,86 @@ def homo_timeout(chat_id):
             types.InlineKeyboardButton("🔙 Главное меню", callback_data="to_menu")
         )
         bot.send_message(chat_id, "Попробуем снова?", reply_markup=markup)
+
+
+# Функции игры ВОРДЛ (Gramle)
+def start_gramle_game(chat_id, user_id):
+    init_user(user_id)
+    USER_MEMORY[user_id]['active_game'] = 'gramle'
+
+    word = ""
+    if os.path.exists('wordlist.txt'):
+        try:
+            with open('wordlist.txt', 'r', encoding='utf-8') as f:
+                lines = [line.strip() for line in f if line.strip()]
+                if lines:
+                    word = random.choice(lines)
+        except Exception as e:
+            print(f"[Error reading wordlist.txt]: {e}")
+
+    if not word:
+        word = "пример"
+
+    target = transcribtor(word)
+    word_lower = word.lower()
+
+    wait_msg = bot.send_message(chat_id, "⌛ Генерируем спектрограмму, подождите...")
+
+    filename = f"spectrogram_{chat_id}.png"
+    try:
+        spectromaker(word_lower, filename)
+    except Exception as e:
+        bot.edit_message_text(f"⚠️ Ошибка при генерации спектрограммы: {e}", chat_id, wait_msg.message_id)
+        return
+
+    try:
+        bot.delete_message(chat_id, wait_msg.message_id)
+    except Exception:
+        pass
+
+    # Отправляем фото спектрограммы с клавиатурой ввода
+    try:
+        with open(filename, 'rb') as photo:
+            bot.send_photo(
+                chat_id,
+                photo,
+                caption="🔍 Спектрограмма загаданного слова:",
+                reply_markup=gramle_keyboard
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ Не удалось отправить спектрограмму: {e}")
+
+    try:
+        os.remove(filename)
+    except Exception:
+        pass
+
+    msg = bot.send_message(
+        chat_id,
+        "📝 <b>Результаты ваших попыток (0/6):</b>\n\n<i>Ожидание первой попытки...</i>",
+        parse_mode="HTML"
+    )
+
+    chats[chat_id] = {
+        'game': 'gramle',
+        'word': word,
+        'target': target,
+        'attempts_history': [],
+        'current_guess': [],
+        'last_msgs': [],
+        'msg_id': msg.message_id,  # сохраняем ID сообщения для редактирования
+        'active': True
+    }
+
+
+def show_gramle_game_over_menu(chat_id, user_id, status):
+    text = "Продолжим?" if status == 'win' else "Попробуем ещё раз?"
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🔄 Сыграть снова", callback_data="play_gramle"),
+        types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu")
+    )
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 
 # Команды
@@ -290,9 +418,9 @@ def leaderboard_command(message):
 
 
 @bot.message_handler(commands=['removekeyboard'])
-def jajemdedov(message):
+def remove_keyboard_command(message):
     remove_markup = types.ReplyKeyboardRemove()
-    bot.send_message(message.chat.id, "Скрываю клавиатуру букв...", reply_markup=remove_markup)
+    bot.send_message(message.chat.id, "Скрываю клавиатуру...", reply_markup=remove_markup)
 
 
 # Обработка колбэков меню
@@ -353,6 +481,14 @@ def handle_callbacks(call):
             markup.add(types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu"))
             text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}\n\n**Выберите сложность:**"
             bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+        elif game_key == 'gramle':
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🎮 Начать игру", callback_data="play_gramle"),
+                types.InlineKeyboardButton("🔙 В главное меню", callback_data="to_menu")
+            )
+            text = f"🎮 **Игра:** {GAMES[game_key]['name']}\n\nℹ️ {GAMES[game_key]['desc']}"
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
 
         bot.answer_callback_query(call.id)
         return
@@ -360,12 +496,17 @@ def handle_callbacks(call):
     if data.startswith("play_"):
         parts = data.split("_")
         game_key = parts[1]
-        bot.delete_message(chat_id, message_id)
+        try:
+            bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
 
         if game_key == 'lingviselica':
             start_hangman_game(chat_id, user_id, parts[2])
         elif game_key == 'homo':
             start_homo_game(chat_id, user_id, parts[2])
+        elif game_key == 'gramle':
+            start_gramle_game(chat_id, user_id)
 
         bot.answer_callback_query(call.id)
         return
@@ -404,6 +545,123 @@ def handle_homo_message(message):
             bot.set_message_reaction(chat_id, message.message_id, [types.ReactionTypeEmoji("👎")])
         except Exception:
             pass
+
+
+# Игровой процесс ВОРДЛ (Gramle)
+@bot.message_handler(
+    func=lambda msg: msg.chat.id in chats and chats[msg.chat.id].get('game') == 'gramle' and chats[msg.chat.id].get(
+        'active'))
+def handle_gramle_message(message):
+    chat_id = message.chat.id
+    session = chats[chat_id]
+    text = message.text.strip()
+
+    if text == "⌫":
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except Exception:
+            pass
+
+        if session['current_guess']:
+            session['current_guess'].pop()
+            if session['last_msgs']:
+                last_msg_id = session['last_msgs'].pop()
+                try:
+                    bot.delete_message(chat_id, last_msg_id)
+                except Exception:
+                    pass
+        return
+
+    if text in symbols:
+        session['current_guess'].append(text)
+        session['last_msgs'].append(message.message_id)
+
+        if len(session['current_guess']) == 6:
+            result_string = "".join(session['current_guess'])
+
+            for msg_id in session['last_msgs']:
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+            session['last_msgs'].clear()
+
+            result_formatted = compare_words(result_string, session['target'])
+            session['attempts_history'].append(result_formatted)
+
+            guess_tokens = tokenize(result_string)
+            target_tokens = tokenize(session['target'])
+            is_win = (guess_tokens == target_tokens)
+
+            history_text = "\n".join(
+                [f"Попытка {idx + 1}: {attempt}" for idx, attempt in enumerate(session['attempts_history'])])
+
+            if is_win:
+                session['active'] = False
+                username = get_user_display_name(message.from_user)
+                update_score(message.from_user.id, username, 20)
+
+                final_text = f"🎉 <b>ПОБЕДА!</b>\nВы правильно угадали транскрипцию!\n\n{history_text}\n\nСлово: <b>{session['word']}</b> [{session['target']}]"
+                try:
+                    bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=session['msg_id'],
+                        text=final_text,
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    bot.send_message(chat_id, final_text, parse_mode="HTML")
+
+                # Скрываем виртуальную клавиатуру
+                try:
+                    rem_msg = bot.send_message(chat_id, "Выход из игрового режима...",
+                                               reply_markup=types.ReplyKeyboardRemove())
+                    bot.delete_message(chat_id, rem_msg.message_id)
+                except Exception:
+                    pass
+
+                show_gramle_game_over_menu(chat_id, message.from_user.id, 'win')
+            else:
+                if len(session['attempts_history']) >= 6:
+                    session['active'] = False
+                    username = get_user_display_name(message.from_user)
+                    update_score(message.from_user.id, username, -10)
+
+                    final_text = f"💀 <b>ИГРА ОКОНЧЕНА!</b> Попытки исчерпаны.\n\n{history_text}\n\nБыло загадано слово: <b>{session['word']}</b> [{session['target']}]"
+                    try:
+                        bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=session['msg_id'],
+                            text=final_text,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        bot.send_message(chat_id, final_text, parse_mode="HTML")
+
+                    # Скрываем виртуальную клавиатуру
+                    try:
+                        rem_msg = bot.send_message(chat_id, "Выход из игрового режима...",
+                                                   reply_markup=types.ReplyKeyboardRemove())
+                        bot.delete_message(chat_id, rem_msg.message_id)
+                    except Exception:
+                        pass
+
+                    show_gramle_game_over_menu(chat_id, message.from_user.id, 'lose')
+                else:
+                    updated_text = f"📝 <b>Результаты ваших попыток ({len(session['attempts_history'])}/6):</b>\n\n{history_text}\n\nПродолжайте вводить символы:"
+                    try:
+                        bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=session['msg_id'],
+                            text=updated_text,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        # В случае ошибки редактирования отправляем новое и сохраняем его ID
+                        new_msg = bot.send_message(chat_id, updated_text, parse_mode="HTML")
+                        session['msg_id'] = new_msg.message_id
+
+                    session['current_guess'].clear()
 
 
 # Игровой процесс Лингвиселицы
