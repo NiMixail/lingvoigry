@@ -14,6 +14,7 @@ https://github.com/YannickJadoul/Parselmouth -- код для создания �
 https://youtu.be/QlQlH-PRQBU?si=6KrlBQUml0ZwZPHP -- коды, представленные в этой серии уроков, использовались при создании бота
 
 **Словари, задействованные в играх:**
+
 https://rus-phraseology-dict.slovaronline.com
 
 https://ru.wiktionary.org
