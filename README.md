@@ -10,9 +10,9 @@
 
 **Для реализации наших идей мы воспользовались этими наработками:**
 
-https://github.com/YannickJadoul/Parselmouth -- код для создания спектрограмм
+ - [код для создания спектрограмм](https://github.com/YannickJadoul/Parselmouth)
 
-https://youtu.be/QlQlH-PRQBU?si=6KrlBQUml0ZwZPHP -- коды, представленные в этой серии уроков, использовались при создании бота
+ - [коды, представленные в этой серии уроков, использовались при создании бота](https://youtu.be/QlQlH-PRQBU?si=6KrlBQUml0ZwZPHP)
 
 **Словари, задействованные в играх:**
 
