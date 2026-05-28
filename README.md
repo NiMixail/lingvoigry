@@ -12,3 +12,9 @@
 https://github.com/YannickJadoul/Parselmouth -- код для создания спектрограмм
 
 https://youtu.be/QlQlH-PRQBU?si=6KrlBQUml0ZwZPHP -- коды, представленные в этой серии уроков, использовались при создании бота
+
+**Словари, задействованные в играх:**
+https://rus-phraseology-dict.slovaronline.com
+https://ru.wiktionary.org
+https://github.com/gramdict/zalizniak-2010
+https://github.com/kkrypt0nn/wordlists/blob/main/wordlists/languages/russian.txt
