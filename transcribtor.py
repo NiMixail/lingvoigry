@@ -37,8 +37,8 @@ def transcribtor(word):
                       lambda m: "'" + {'Я': 'А', 'Ё': 'О', 'Ю': 'У', 'Е': 'Э', 'я': 'а', 'ё': 'о', 'ю': 'у', 'е': 'э'}[
                           m.group(1)], word)
 
-    if re.findall(r'([^аоиыэу]*)и', word):
-        word = re.sub(r'([^аоиыэу]*)(и)', r"\1'\2", word)
+    if re.findall(r'([^аоиыэу]*)[иИ]', word):
+        word = re.sub(r'([^аоиыэу]*)([иИ])', r"\1'\2", word)
 
     if re.findall(r'([^аоиыэу]*)ь', word):
         word = re.sub(r'([^аоиыэу]*)ь', r"\1'", word)
