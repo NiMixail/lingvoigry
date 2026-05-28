@@ -89,7 +89,8 @@ GAMES = {
              'desc': 'Придумай слово (любой части речи, в любой форме), содержащее заданное буквосочетание. На придумывание даётся 10 секунд. Слово нужно писать ЗАГЛАВНЫМИ буквами.'},
     'gramle': {'name': 'RuGramle 📊',
                'desc': 'Угадайте транскрипцию (6 звуков) русского существительного по его спектрограмме. Игра по правилам Wordle: жирное выделение = жёлтый цвет, жирное с подчёркиванием = зелёный цвет.'},
-           'linguesser': {'name': 'Угадай язык 📖', 'desc': 'Угадай язык по фрагменту текста (1 статья всеобщей декларации прав человека). На отгадку дается три попытки. После каждой попытки дается подсказка.'}}
+    'linguesser': {'name': 'Угадай язык 📖',
+                   'desc': 'Угадай язык по фрагменту текста (1 статья Всеобщей декларации прав человека). На отгадку дается три попытки. После каждой попытки дается подсказка.'}}
 
 USER_MEMORY = {}
 chats = {}
@@ -241,7 +242,8 @@ def show_game_over_menu(chat_id, user_id, status):
     )
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
-#функции игры угадай язык
+
+# функции игры угадай язык
 
 def linguesser_gameover(chat_id, user_id):
     text = "Попробуем ещё раз?"
@@ -254,25 +256,25 @@ def linguesser_gameover(chat_id, user_id):
     )
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
+
 def start_linguesser_game(chat_id, user_id, lvl):
-    
     if lvl == "easy":
         with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
             langs = f.readlines()
-            a = (random.randint(0,69))*4
-            
-            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+            a = (random.randint(0, 69)) * 4
+
+            lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
     elif lvl == "medium":
         with open('угадай язык/средний.txt', 'r', encoding='utf-8') as f:
             langs = f.readlines()
-            a = (random.randint(0,78))*4
-            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+            a = (random.randint(0, 78)) * 4
+            lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
     elif lvl == "hard":
         with open('угадай язык/сложный.txt', 'r', encoding='utf-8') as f:
             langs = f.readlines()
-            a = (random.randint(0,54))*4
-            lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
-    
+            a = (random.randint(0, 54)) * 4
+            lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
+
     if text[-4:] == ".jpg":
         with open(f"угадай язык/{text}", 'rb') as photo:
             bot.send_photo(chat_id, photo)
@@ -294,25 +296,26 @@ def start_linguesser_game(chat_id, user_id, lvl):
 
     }
 
+
 def send_lang(chat_id, user_id, lvl):
     ch = chats[chat_id]
     while ch["lang"] in ch["played"]:
         if lvl == "easy":
             with open('угадай язык/простой.txt', 'r', encoding='utf-8') as f:
                 langs = f.readlines()
-                a = (random.randint(0,69))*4
-            
-                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+                a = (random.randint(0, 69)) * 4
+
+                lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
         elif lvl == "medium":
             with open('угадай язык/средний.txt', 'r', encoding='utf-8') as f:
                 langs = f.readlines()
-                a = (random.randint(0,78))*4
-                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+                a = (random.randint(0, 78)) * 4
+                lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
         elif lvl == "hard":
             with open('угадай язык/сложный.txt', 'r', encoding='utf-8') as f:
                 langs = f.readlines()
-                a = (random.randint(0,54))*4
-                lang, info, text = langs[a].strip(), langs[a+1].strip(), langs[a+2].strip()
+                a = (random.randint(0, 54)) * 4
+                lang, info, text = langs[a].strip(), langs[a + 1].strip(), langs[a + 2].strip()
         ch['lang'] = lang
         ch['info'] = info
 
@@ -454,7 +457,7 @@ def start_gramle_game(chat_id, user_id):
         'attempts_history': [],
         'current_guess': [],
         'last_msgs': [],
-        'msg_id': msg.message_id,  # сохраняем ID сообщения для редактирования
+        'msg_id': msg.message_id,
         'active': True
     }
 
@@ -639,6 +642,7 @@ def handle_homo_message(message):
         except Exception:
             pass
 
+
 # Игровой процесс угадай язык
 @bot.message_handler(
     func=lambda msg: msg.chat.id in chats and chats[msg.chat.id].get('game') == 'linguesser' and chats[
@@ -648,7 +652,7 @@ def handle_linguesser_message(message):
     user_id = message.from_user.id
     ch = chats[chat_id]
     t = message.text
-    
+
     if ch["lang"].lower() == t.lower():
         bot.reply_to(message, "Верно!")
         ch["played"].append(ch["lang"])
@@ -659,7 +663,7 @@ def handle_linguesser_message(message):
             ch['score'] += 5
         elif ch['lvl'] == "hard":
             ch['score'] += 10
-        
+
         send_lang(chat_id, user_id, ch["lvl"])
     else:
         ch["tries"] -= 1
@@ -668,13 +672,13 @@ def handle_linguesser_message(message):
         except Exception:
             pass
         if ch["tries"] == 2:
-            bot.send_message(message.chat.id, f"Подсказка: первая буква в названии языка {ch["lang"][0]}.")
+            bot.send_message(message.chat.id, f"Подсказка: первая буква в названии языка {ch['lang'][0]}.")
         elif ch['tries'] == 1:
-            bot.send_message(message.chat.id, f"Подсказка: язык относится к таксонам {ch["info"]}.")
+            bot.send_message(message.chat.id, f"Подсказка: язык относится к таксонам {ch['info']}.")
         elif ch['tries'] == 0:
-            bot.send_message(message.chat.id, f"Вы проиграли! Это {ch["lang"].lower()}.")
+            bot.send_message(message.chat.id, f"Вы проиграли! Это {ch['lang'].lower()}.")
             username = get_user_display_name(message.from_user)
-            update_score(message.from_user.id, username, ch['score'])
+            update_score(message.from_user.id, username, ch['score'] - 5)
             linguesser_gameover(chat_id, user_id)
 
 
@@ -743,7 +747,6 @@ def handle_gramle_message(message):
                 except Exception:
                     bot.send_message(chat_id, final_text, parse_mode="HTML")
 
-                # Скрываем виртуальную клавиатуру
                 try:
                     rem_msg = bot.send_message(chat_id, "Выход из игрового режима...",
                                                reply_markup=types.ReplyKeyboardRemove())
